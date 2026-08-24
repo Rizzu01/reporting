@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 
-type Entry = { date: string; description?: string; title?: string; assignedTo?: string; remark?: string };
+type Entry = { date: string; description?: string; title?: string; assignedTo?: string; driveLink?: string; remark?: string };
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00`));
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
 
     const dates = [...new Set(entries.map((entry) => entry.date))].sort();
     const period = `${formatDate(dates[0])} – ${formatDate(dates[dates.length - 1])}`;
+    const driveLinks = new Map(entries.map((entry) => [entry.date, entry.driveLink || ""]));
     const children: Paragraph[] = [
       new Paragraph({ text: "🎨 Weekly Work Report", heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER, spacing: { after: 100 } }),
       new Paragraph({ children: [new TextRun({ text: `Period: ${period}`, bold: true })], alignment: AlignmentType.CENTER, spacing: { after: 360 } }),
@@ -64,11 +65,21 @@ export async function POST(request: Request) {
 
         if (/^###\s*/.test(line)) {
           remarkMode = false;
+          const headingText = cleanMarkdown(line.replace(/^###\s*/, ""));
           children.push(new Paragraph({
-            children: [new TextRun({ text: cleanMarkdown(line.replace(/^###\s*/, "")), bold: true, size: 26 })],
+            children: [new TextRun({ text: headingText, bold: true, size: 26 })],
             heading: HeadingLevel.HEADING_2,
             spacing: { before: 260, after: 130 },
           }));
+          const dateText = headingText.split("|").slice(1).join("|").trim();
+          const matchedDate = dates.find((date) => formatDate(date) === dateText);
+          const link = matchedDate ? driveLinks.get(matchedDate) : "";
+          if (link && !overallReport.includes(link)) {
+            children.push(new Paragraph({
+              children: [new TextRun({ text: "Work Files: ", bold: true, color: "7355F5" }), new TextRun({ text: link, color: "7355F5", underline: {} })],
+              spacing: { after: 110 },
+            }));
+          }
           continue;
         }
 
@@ -117,6 +128,7 @@ export async function POST(request: Request) {
       }
       for (const [date, dayEntries] of grouped) {
         children.push(new Paragraph({ text: `${new Intl.DateTimeFormat("en-IN", { weekday: "long" }).format(new Date(`${date}T00:00:00`))} | ${formatDate(date)}`, heading: HeadingLevel.HEADING_2, spacing: { before: 220, after: 140 } }));
+        if (dayEntries[0]?.driveLink) children.push(new Paragraph({ children: [new TextRun({ text: "Work Files: ", bold: true, color: "7355F5" }), new TextRun({ text: dayEntries[0].driveLink, color: "7355F5", underline: {} })], spacing: { after: 110 } }));
         for (const entry of dayEntries) children.push(new Paragraph({ bullet: { level: 0 }, children: [new TextRun({ text: entry.description ?? entry.title ?? "", bold: true })], spacing: { after: 90 } }));
       }
     }
