@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./cloud-sync.css";
 import CloudSync from "@/components/cloud-sync";
 
 export const metadata: Metadata = {
