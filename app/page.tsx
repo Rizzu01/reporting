@@ -3,42 +3,175 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Task = { id: string; date: string; description: string; assignedTo: string; remark?: string };
+
 const KEY = "worklog.tasks.v2";
 const ASSIGNED_KEY = "worklog.assignedTo.v1";
 const REPORT_KEY = "worklog.overallReport.v1";
 const today = new Date().toISOString().slice(0, 10);
-function formatDate(date: string) { return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00`)); }
-function shortDate(date: string) { return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T00:00:00`)); }
-function dayName(date: string) { return new Intl.DateTimeFormat("en-IN", { weekday: "long" }).format(new Date(`${date}T00:00:00`)); }
-function getWeekStart(date: string) { const d = new Date(`${date}T00:00:00`); const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); return d.toISOString().slice(0, 10); }
-function getWeekDates(date: string) { const start = new Date(`${getWeekStart(date)}T00:00:00`); return Array.from({ length: 6 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d.toISOString().slice(0, 10); }); }
-function buildOverallReportPrompt(entries: Task[], rangeLabel: string) { const grouped = entries.reduce<Record<string, Task[]>>((acc, task) => { (acc[task.date] ??= []).push(task); return acc; }, {}); const taskText = Object.entries(grouped).map(([date, tasks]) => `### ${dayName(date)} | ${formatDate(date)}\n${tasks.map(t => `- ${t.description} (Assigned To: ${t.assignedTo})`).join("\n")}`).join("\n\n"); return `I am preparing my weekly work report for my manager.\n\nPeriod: ${rangeLabel}\n\nWORK LOG:\n${taskText}\n\nCreate the COMPLETE weekly work report in exactly this structure:\n\n# 🎨 Weekly Work Report\n\nPeriod: ${rangeLabel}\n\n### Monday | 17 August 2026\n\n- Created **1 LinkedIn Post** for Money Expo.\n- Designed **1 PR Banner**.\n\n**Remark:**\n\nWrite a professional 2-3 sentence remark based only on that day's logged work.\n\n---\n\nRepeat the same structure for every day that has tasks. Use the real day and date from the work log. After all days, add:\n\n## Weekly Summary\n\nWrite a polished manager-facing weekly summary covering the major areas of work, notable campaigns/projects, workload patterns, and technical/design implementation details only when supported by the logged tasks.\n\nIMPORTANT RULES:\n- Keep the exact report structure shown above.\n- Use the actual first-task date as the beginning of the Period and the actual last-task date as the end of the Period.\n- Use a bullet for every logged task.\n- Keep each day's tasks grouped under that day.\n- Generate a separate **Remark:** for every day.\n- Generate one **Weekly Summary** at the end.\n- Do not invent facts, numbers, achievements, blockers, technical work, or outcomes.\n- Return ONLY the complete report.`; }
-async function openChatGPTWithPrompt(prompt: string) { try { await navigator.clipboard.writeText(prompt); } catch {} window.open("https://chatgpt.com/?q=" + encodeURIComponent(prompt), "_blank", "noopener,noreferrer"); }
+
+function formatDate(date: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00`));
+}
+function shortDate(date: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T00:00:00`));
+}
+function dayName(date: string) {
+  return new Intl.DateTimeFormat("en-IN", { weekday: "long" }).format(new Date(`${date}T00:00:00`));
+}
+function getWeekStart(date: string) {
+  const d = new Date(`${date}T00:00:00`);
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+}
+function getWeekDates(date: string) {
+  const start = new Date(`${getWeekStart(date)}T00:00:00`);
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+function buildOverallReportPrompt(entries: Task[], rangeLabel: string) {
+  const grouped = entries.reduce<Record<string, Task[]>>((acc, task) => {
+    (acc[task.date] ??= []).push(task);
+    return acc;
+  }, {});
+  const taskText = Object.entries(grouped)
+    .map(([date, tasks]) => `### ${dayName(date)} | ${formatDate(date)}\n${tasks.map(t => `- ${t.description} (Assigned To: ${t.assignedTo})`).join("\n")}`)
+    .join("\n\n");
+
+  return `I am preparing my weekly work report for my manager.\n\nPeriod: ${rangeLabel}\n\nWORK LOG:\n${taskText}\n\nCreate the COMPLETE weekly work report in exactly this structure:\n\n# 🎨 Weekly Work Report\n\nPeriod: ${rangeLabel}\n\n### Monday | 17 August 2026\n\n- Created **1 LinkedIn Post** for Money Expo.\n- Designed **1 PR Banner**.\n\n**Remark:**\n\nWrite a professional 2-3 sentence remark based only on that day's logged work.\n\n---\n\nRepeat the same structure for every day that has tasks. Use the real day and date from the work log. After all days, add:\n\n## Weekly Summary\n\nWrite a polished manager-facing weekly summary covering the major areas of work, notable campaigns/projects, workload patterns, and technical/design implementation details only when supported by the logged tasks.\n\nIMPORTANT RULES:\n- Keep the exact report structure shown above.\n- Use the actual first-task date as the beginning of the Period and the actual last-task date as the end of the Period.\n- Use a bullet for every logged task.\n- Keep each day's tasks grouped under that day.\n- Generate a separate **Remark:** for every day.\n- Generate one **Weekly Summary** at the end.\n- Do not invent facts, numbers, achievements, blockers, technical work, or outcomes.\n- Return ONLY the complete report.`;
+}
+
+async function openChatGPTWithPrompt(prompt: string) {
+  try { await navigator.clipboard.writeText(prompt); } catch {}
+  window.open("https://chatgpt.com/?q=" + encodeURIComponent(prompt), "_blank", "noopener,noreferrer");
+}
 
 export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>([]); const [date, setDate] = useState(today); const [description, setDescription] = useState(""); const [assignedTo, setAssignedTo] = useState("Designer"); const [reportTitle] = useState("Weekly Design Task Tracker"); const [notice, setNotice] = useState(""); const [overallReport, setOverallReport] = useState("");
-  useEffect(() => { try { const saved = localStorage.getItem(KEY); const savedAssigned = localStorage.getItem(ASSIGNED_KEY); const savedReport = localStorage.getItem(REPORT_KEY); if (saved) setTasks(JSON.parse(saved)); if (savedAssigned) setAssignedTo(savedAssigned); if (savedReport) setOverallReport(savedReport); } catch { setNotice("Could not read saved tasks."); } }, []);
-  useEffect(() => localStorage.setItem(KEY, JSON.stringify(tasks)), [tasks]); useEffect(() => localStorage.setItem(ASSIGNED_KEY, assignedTo), [assignedTo]); useEffect(() => localStorage.setItem(REPORT_KEY, overallReport), [overallReport]);
-  const weekDates = useMemo(() => getWeekDates(date), [date]); const weekTasks = useMemo(() => tasks.filter(t => weekDates.includes(t.date)), [tasks, weekDates]); const monthTasks = useMemo(() => tasks.filter(t => t.date.startsWith(date.slice(0, 7))), [tasks, date]); const groupedWeek = useMemo(() => weekDates.map(d => ({ date: d, tasks: weekTasks.filter(t => t.date === d) })).filter(g => g.tasks.length), [weekDates, weekTasks]); const reportStartDate = weekTasks.length ? [...weekTasks].sort((a, b) => a.date.localeCompare(b.date))[0].date : date; const reportEndDate = weekTasks.length ? [...weekTasks].sort((a, b) => b.date.localeCompare(a.date))[0].date : date; const rangeLabel = `${shortDate(reportStartDate)} – ${shortDate(reportEndDate)}`; const activeDays = groupedWeek.length; const totalTasks = weekTasks.length;
-  function addTask() { if (!description.trim()) { setNotice("Add a task description first."); return; } setTasks(current => [...current, { id: crypto.randomUUID(), date, description: description.trim(), assignedTo: assignedTo.trim() || "Designer" }]); setDescription(""); setNotice("Task saved successfully."); }
-  function removeTask(id: string) { setTasks(current => current.filter(task => task.id !== id)); }
-  function generateOverallReport() { if (!weekTasks.length) { setNotice("Add at least one task first."); return; } const prompt = buildOverallReportPrompt(weekTasks, rangeLabel); setNotice(`Opening ChatGPT with ${rangeLabel}. The complete prompt is also copied.`); void openChatGPTWithPrompt(prompt); }
-  function exportCsv(scope: "week" | "month") { const data = scope === "week" ? weekTasks : monthTasks; const rows = [["#", "Day", "Date", "Task Description", "Assigned To"], ...data.map((task, index) => [index + 1, dayName(task.date), formatDate(task.date), task.description, task.assignedTo])]; const csv = rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); a.download = `design-task-tracker-${scope}-${date}.csv`; a.click(); }
-  function printReport(scope: "week" | "month") { const groups = scope === "week" ? groupedWeek : Array.from(new Set(monthTasks.map(t => t.date))).sort().map(d => ({ date: d, tasks: monthTasks.filter(t => t.date === d) })); const heading = scope === "week" ? `Weekly Design Task Tracker | ${rangeLabel}` : "Monthly Design Task Tracker"; const rows = groups.flatMap(group => group.tasks.map((task, i) => `<tr><td>${i === 0 ? group.tasks.indexOf(task) + 1 : ""}</td><td>${i === 0 ? `<strong>${dayName(group.date)}</strong>` : ""}</td><td>${i === 0 ? `<em>${formatDate(group.date)}</em>` : ""}</td><td>${task.description}</td><td>${task.assignedTo}</td></tr>`)).join(""); const win = window.open("", "_blank"); if (!win) return; win.document.write(`<html><head><title>${heading}</title><style>body{font-family:Arial;padding:32px;color:#111}h1{text-align:center;font-size:20px;margin:0 0 24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:9px;text-align:left;vertical-align:top;font-size:12px}th{text-align:center;background:#f3f3f3}</style></head><body><h1>🎨 ${heading}</h1><table><thead><tr><th>#</th><th>Day</th><th>Date</th><th>Task Description</th><th>Assigned To</th></tr></thead><tbody>${rows}</tbody></table></body></html>`); win.document.close(); win.focus(); win.print(); }
-  async function downloadWord() { if (!weekTasks.length) { setNotice("Add at least one task first."); return; } if (!overallReport.trim()) { setNotice("Paste the complete ChatGPT report above before downloading Word."); return; } setNotice("Generating Word report…"); const res = await fetch("/api/report/word", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries: weekTasks, overallReport }) }); if (!res.ok) { setNotice("Could not generate Word report."); return; } const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `weekly-work-report-${reportStartDate}-to-${reportEndDate}.docx`; a.click(); URL.revokeObjectURL(url); setNotice("Word report downloaded."); }
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [date, setDate] = useState(today);
+  const [description, setDescription] = useState("");
+  const [assignedTo, setAssignedTo] = useState("Designer");
+  const [notice, setNotice] = useState("");
+  const [overallReport, setOverallReport] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeNav, setActiveNav] = useState("dashboard");
 
-  return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><div className="brand-mark">W</div><div><strong>Worklog</strong><span>Design reporting</span></div></div><nav><a className="nav-item active"><span>▦</span> Dashboard</a><a className="nav-item"><span>✓</span> Daily Tasks</a><a className="nav-item"><span>▤</span> Weekly Report</a><a className="nav-item"><span>▥</span> Monthly Report</a></nav><div className="sidebar-bottom"><div className="mini-user"><div className="avatar">D</div><div><strong>Designer</strong><span>Work workspace</span></div></div><div className="side-note">No API key required<br />ChatGPT-assisted reporting</div></div></aside>
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(KEY);
+      const savedAssigned = localStorage.getItem(ASSIGNED_KEY);
+      const savedReport = localStorage.getItem(REPORT_KEY);
+      if (saved) setTasks(JSON.parse(saved));
+      if (savedAssigned) setAssignedTo(savedAssigned);
+      if (savedReport) setOverallReport(savedReport);
+    } catch {
+      setNotice("Could not read saved tasks.");
+    }
+  }, []);
+  useEffect(() => localStorage.setItem(KEY, JSON.stringify(tasks)), [tasks]);
+  useEffect(() => localStorage.setItem(ASSIGNED_KEY, assignedTo), [assignedTo]);
+  useEffect(() => localStorage.setItem(REPORT_KEY, overallReport), [overallReport]);
+
+  const weekDates = useMemo(() => getWeekDates(date), [date]);
+  const weekTasks = useMemo(() => tasks.filter(t => weekDates.includes(t.date)), [tasks, weekDates]);
+  const monthTasks = useMemo(() => tasks.filter(t => t.date.startsWith(date.slice(0, 7))), [tasks, date]);
+  const groupedWeek = useMemo(() => weekDates.map(d => ({ date: d, tasks: weekTasks.filter(t => t.date === d) })).filter(g => g.tasks.length), [weekDates, weekTasks]);
+  const reportStartDate = weekTasks.length ? [...weekTasks].sort((a, b) => a.date.localeCompare(b.date))[0].date : date;
+  const reportEndDate = weekTasks.length ? [...weekTasks].sort((a, b) => b.date.localeCompare(a.date))[0].date : date;
+  const rangeLabel = `${shortDate(reportStartDate)} – ${shortDate(reportEndDate)}`;
+  const activeDays = groupedWeek.length;
+  const totalTasks = weekTasks.length;
+
+  function goTo(id: string) {
+    setActiveNav(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function addTask() {
+    if (!description.trim()) { setNotice("Add a task description first."); return; }
+    setTasks(current => [...current, { id: crypto.randomUUID(), date, description: description.trim(), assignedTo: assignedTo.trim() || "Designer" }]);
+    setDescription("");
+    setNotice("Task saved successfully.");
+  }
+  function removeTask(id: string) { setTasks(current => current.filter(task => task.id !== id)); }
+  function generateOverallReport() {
+    if (!weekTasks.length) { setNotice("Add at least one task first."); return; }
+    const prompt = buildOverallReportPrompt(weekTasks, rangeLabel);
+    setNotice(`Opening ChatGPT with ${rangeLabel}. The complete prompt is also copied.`);
+    void openChatGPTWithPrompt(prompt);
+  }
+  function exportCsv(scope: "week" | "month") {
+    const data = scope === "week" ? weekTasks : monthTasks;
+    const rows = [["#", "Day", "Date", "Task Description", "Assigned To"], ...data.map((task, index) => [index + 1, dayName(task.date), formatDate(task.date), task.description, task.assignedTo])];
+    const csv = rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = `design-task-tracker-${scope}-${date}.csv`;
+    a.click();
+  }
+  function printReport(scope: "week" | "month") {
+    const groups = scope === "week" ? groupedWeek : Array.from(new Set(monthTasks.map(t => t.date))).sort().map(d => ({ date: d, tasks: monthTasks.filter(t => t.date === d) }));
+    const heading = scope === "week" ? `Weekly Design Task Tracker | ${rangeLabel}` : "Monthly Design Task Tracker";
+    const rows = groups.flatMap(group => group.tasks.map((task, i) => `<tr><td>${i === 0 ? group.tasks.indexOf(task) + 1 : ""}</td><td>${i === 0 ? `<strong>${dayName(group.date)}</strong>` : ""}</td><td>${i === 0 ? `<em>${formatDate(group.date)}</em>` : ""}</td><td>${task.description}</td><td>${task.assignedTo}</td></tr>`)).join("");
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<html><head><title>${heading}</title><style>body{font-family:Arial;padding:32px;color:#111}h1{text-align:center;font-size:20px;margin:0 0 24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:9px;text-align:left;vertical-align:top;font-size:12px}th{text-align:center;background:#f3f3f3}</style></head><body><h1>🎨 ${heading}</h1><table><thead><tr><th>#</th><th>Day</th><th>Date</th><th>Task Description</th><th>Assigned To</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    win.document.close(); win.focus(); win.print();
+  }
+  async function downloadWord() {
+    if (!weekTasks.length) { setNotice("Add at least one task first."); return; }
+    if (!overallReport.trim()) { setNotice("Paste the complete ChatGPT report above before downloading Word."); return; }
+    setNotice("Generating Word report…");
+    const res = await fetch("/api/report/word", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries: weekTasks, overallReport }) });
+    if (!res.ok) { setNotice("Could not generate Word report."); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `weekly-work-report-${reportStartDate}-to-${reportEndDate}.docx`; a.click();
+    URL.revokeObjectURL(url); setNotice("Word report downloaded.");
+  }
+
+  return <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <aside className="sidebar">
+      <div className="sidebar-top">
+        <div className="brand"><div className="brand-mark">W</div><div className="brand-copy"><strong>Worklog</strong><span>Design reporting</span></div></div>
+        <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(v => !v)} aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"} title={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}>{sidebarCollapsed ? "›" : "‹"}</button>
+      </div>
+      <nav>
+        <button className={`nav-item ${activeNav === "dashboard" ? "active" : ""}`} onClick={() => goTo("dashboard")}><span>▦</span><b>Dashboard</b></button>
+        <button className={`nav-item ${activeNav === "daily" ? "active" : ""}`} onClick={() => goTo("daily")}><span>✓</span><b>Daily Tasks</b></button>
+        <button className={`nav-item ${activeNav === "weekly" ? "active" : ""}`} onClick={() => goTo("weekly")}><span>▤</span><b>Weekly Report</b></button>
+        <button className={`nav-item ${activeNav === "monthly" ? "active" : ""}`} onClick={() => goTo("monthly")}><span>▥</span><b>Monthly Report</b></button>
+      </nav>
+    </aside>
+
     <main className="dashboard">
-      <header className="dashboard-header"><div><div className="eyebrow">WORKSPACE / REPORTING</div><h1>Good morning 👋</h1><p>Track your daily design work and turn it into a manager-ready report.</p></div><div className="header-actions"><button className="soft-btn" onClick={() => printReport("week")}>↗ Print report</button><button className="dark-btn" onClick={downloadWord}>↓ Download Word</button></div></header>
-      <section className="stats-grid"><div className="stat-card"><div className="stat-icon purple">✓</div><div><span>Total tasks</span><strong>{totalTasks}</strong></div></div><div className="stat-card"><div className="stat-icon blue">◷</div><div><span>Active days</span><strong>{activeDays}</strong></div></div><div className="stat-card"><div className="stat-icon pink">▤</div><div><span>Report period</span><strong>{rangeLabel}</strong></div></div><div className="stat-card progress-stat"><div><span>Weekly progress</span><strong>{totalTasks ? "On track" : "Start logging"}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, activeDays / 6 * 100)}%` }} /></div></div></section>
-      <section className="workspace-grid">
+      <header id="dashboard" className="dashboard-header">
+        <div><div className="eyebrow">WORKSPACE / REPORTING</div><h1>Good morning 👋</h1><p>Track your daily design work and turn it into a manager-ready report.</p></div>
+        <div className="header-actions"><button className="soft-btn" onClick={() => printReport("week")}>↗ Print report</button><button className="dark-btn" onClick={downloadWord}>↓ Download Word</button></div>
+      </header>
+
+      <section className="stats-grid">
+        <div className="stat-card"><div className="stat-icon purple">✓</div><div><span>Total tasks</span><strong>{totalTasks}</strong></div></div>
+        <div className="stat-card"><div className="stat-icon blue">◷</div><div><span>Active days</span><strong>{activeDays}</strong></div></div>
+        <div className="stat-card"><div className="stat-icon pink">▤</div><div><span>Report period</span><strong>{rangeLabel}</strong></div></div>
+        <div className="stat-card progress-stat"><div><span>Weekly progress</span><strong>{totalTasks ? "On track" : "Start logging"}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, activeDays / 6 * 100)}%` }} /></div></div>
+      </section>
+
+      <section id="daily" className="workspace-grid">
         <div className="panel add-panel"><div className="panel-title"><div><span className="kicker">DAILY TASKS</span><h2>Add work</h2></div><span className="date-pill">{shortDate(date)}</span></div><div className="form-stack"><label>Task description<input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Create 2 Blog Banners" onKeyDown={e => { if (e.key === "Enter") addTask(); }} /></label><label>Date<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label><label>Assigned to<input value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="Designer" /></label><button className="dark-btn full" onClick={addTask}>+ Add task</button></div>{notice && <div className="notice">{notice}</div>}</div>
-        <div className="panel tracker-panel"><div className="panel-title"><div><span className="kicker">THIS PERIOD</span><h2>Weekly task tracker</h2></div><span className="period-pill">{rangeLabel}</span></div><div className="day-list">{groupedWeek.length ? groupedWeek.map(group => <div className="day-group" key={group.date}><div className="day-head"><div><strong>{dayName(group.date)}</strong><span>{formatDate(group.date)}</span></div><b>{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</b></div>{group.tasks.map(task => <div className="task-card" key={task.id}><div className="task-dot" /><div className="task-main"><strong>{task.description}</strong><span>Assigned to {task.assignedTo}</span></div><button onClick={() => removeTask(task.id)} aria-label="Delete task">×</button></div>)}</div>) : <div className="empty-state"><div>✦</div><strong>No tasks yet</strong><span>Add your first task to start the report.</span></div>}</div></div>
+
+        <div id="weekly" className="panel tracker-panel"><div className="panel-title"><div><span className="kicker">THIS PERIOD</span><h2>Weekly task tracker</h2></div><span className="period-pill">{rangeLabel}</span></div><div className="day-list">{groupedWeek.length ? groupedWeek.map(group => <div className="day-group" key={group.date}><div className="day-head"><div><strong>{dayName(group.date)}</strong><span>{formatDate(group.date)}</span></div><b>{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</b></div>{group.tasks.map(task => <div className="task-card" key={task.id}><div className="task-dot" /><div className="task-main"><strong>{task.description}</strong><span>Assigned to {task.assignedTo}</span></div><button onClick={() => removeTask(task.id)} aria-label="Delete task">×</button></div>)}</div>) : <div className="empty-state"><div>✦</div><strong>No tasks yet</strong><span>Add your first task to start the report.</span></div>}</div></div>
+
         <div className="panel report-panel"><div className="panel-title"><div><span className="kicker">REPORT</span><h2>Generate report</h2></div><div className="report-badge">ChatGPT</div></div><div className="report-hero"><div className="report-symbol">✦</div><h3>Complete weekly report</h3><p>Generate daily bullets, daily remarks and the final weekly summary using your saved tasks.</p><div className="period-box"><span>REPORT PERIOD</span><strong>{rangeLabel}</strong></div><button className="purple-btn full" onClick={generateOverallReport}>✦ Generate in ChatGPT</button><small>The prompt is copied automatically.</small></div><div className="export-row"><button className="soft-btn" onClick={() => exportCsv("week")}>Weekly CSV</button><button className="soft-btn" onClick={downloadWord}>Word .docx</button></div></div>
       </section>
+
       <section className="panel report-editor"><div className="panel-title"><div><span className="kicker">FINAL REPORT</span><h2>Manager-ready report</h2><p>Paste the complete response from ChatGPT here. It will be used exactly for the Word document.</p></div><span className="saved-pill">Auto-saved</span></div><textarea value={overallReport} onChange={e => setOverallReport(e.target.value)} placeholder="# 🎨 Weekly Work Report\n\nPeriod: ...\n\n### Monday | ...\n\n- Created ...\n\n**Remark:**\n\n...\n\n## Weekly Summary\n\n..." rows={14} /><div className="editor-footer"><span>{overallReport.length ? `${overallReport.length.toLocaleString()} characters saved` : "No report pasted yet"}</span><div><button className="soft-btn" onClick={() => setOverallReport("")}>Clear</button><button className="dark-btn" onClick={downloadWord}>↓ Download Word Report</button></div></div></section>
-      <section className="bottom-strip"><div><span className="kicker">MONTHLY EXPORT</span><strong>Need the full month?</strong><span>Export your saved monthly task history.</span></div><div className="strip-actions"><button className="soft-btn" onClick={() => exportCsv("month")}>Monthly CSV</button><button className="soft-btn" onClick={() => printReport("month")}>Monthly PDF</button></div></section>
+
+      <section id="monthly" className="bottom-strip"><div><span className="kicker">MONTHLY EXPORT</span><strong>Need the full month?</strong><span>Export your saved monthly task history.</span></div><div className="strip-actions"><button className="soft-btn" onClick={() => exportCsv("month")}>Monthly CSV</button><button className="soft-btn" onClick={() => printReport("month")}>Monthly PDF</button></div></section>
       <footer>Worklog · saved locally in this browser · ChatGPT-assisted reporting</footer>
     </main>
   </div>;
