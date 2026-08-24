@@ -6,10 +6,10 @@ import { getSupabaseClient } from "@/lib/supabase";
 const TASK_KEY = "worklog.tasks.v2";
 const REPORT_KEY = "worklog.overallReport.v1";
 const MIGRATED_KEY = "worklog.cloudMigrated.v1";
-type LocalTask = { id: string; date: string; description: string; assignedTo: string; remark?: string };
+type LocalTask = { id: string; date: string; description: string; assignedTo: string; driveLink?: string; remark?: string };
 type Props = { children: React.ReactNode };
 function safeTasks(): LocalTask[] { try { const value = localStorage.getItem(TASK_KEY); const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
-function normalizedTasks(tasks: LocalTask[]) { return [...tasks].map((task) => ({ id: task.id, date: task.date, description: task.description, assignedTo: task.assignedTo || "Designer", remark: task.remark })).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)); }
+function normalizedTasks(tasks: LocalTask[]) { return [...tasks].map((task) => ({ id: task.id, date: task.date, description: task.description, assignedTo: task.assignedTo || "Designer", driveLink: task.driveLink || "", remark: task.remark })).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)); }
 function authRedirectUrl() { return typeof window !== "undefined" ? window.location.origin : undefined; }
 
 export default function CloudSync({ children }: Props) {
@@ -18,9 +18,9 @@ export default function CloudSync({ children }: Props) {
 
   const loadCloud = useCallback(async () => {
     if (!supabase) return; const { data: { user } } = await supabase.auth.getUser(); if (!user) return;
-    const { data: rows, error } = await supabase.from("tasks").select("id, work_date, description, assigned_to, created_at").eq("user_id", user.id).order("work_date", { ascending: true }).order("created_at", { ascending: true });
+    const { data: rows, error } = await supabase.from("tasks").select("id, work_date, description, assigned_to, drive_link, created_at").eq("user_id", user.id).order("work_date", { ascending: true }).order("created_at", { ascending: true });
     if (error) throw error;
-    const cloudTasks: LocalTask[] = (rows ?? []).map((row) => ({ id: row.id, date: row.work_date, description: row.description, assignedTo: row.assigned_to }));
+    const cloudTasks: LocalTask[] = (rows ?? []).map((row) => ({ id: row.id, date: row.work_date, description: row.description, assignedTo: row.assigned_to, driveLink: row.drive_link || undefined }));
     const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks)); const localSignature = JSON.stringify(normalizedTasks(safeTasks()));
     if (cloudSignature !== localSignature) { localStorage.setItem(TASK_KEY, JSON.stringify(cloudTasks)); window.location.reload(); return; }
     lastUploaded.current = cloudSignature;
@@ -36,7 +36,7 @@ export default function CloudSync({ children }: Props) {
         const { data: cloudRows, error: cloudError } = await supabase.from("tasks").select("id").eq("user_id", user.id); if (cloudError) throw cloudError;
         const localIds = new Set(localTasks.map((task) => task.id));
         for (const row of cloudRows ?? []) if (!localIds.has(row.id)) { const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id); if (error) throw error; }
-        if (localTasks.length) { const rows = localTasks.map((task) => ({ id: task.id, user_id: user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer" })); const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" }); if (error) throw error; }
+        if (localTasks.length) { const rows = localTasks.map((task) => ({ id: task.id, user_id: user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer", drive_link: task.driveLink || null })); const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" }); if (error) throw error; }
         lastUploaded.current = signature;
       }
       const report = localStorage.getItem(REPORT_KEY) ?? "";
@@ -49,7 +49,7 @@ export default function CloudSync({ children }: Props) {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession(); if (!mounted) return; setUserEmail(session?.user?.email ?? ""); setReady(true);
       if (session?.user) try {
-        const migratedKey = `${MIGRATED_KEY}:${session.user.id}`; if (!localStorage.getItem(migratedKey)) { const localTasks = safeTasks(); if (localTasks.length) { const rows = localTasks.map((task) => ({ id: task.id, user_id: session.user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer" })); const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" }); if (error) throw error; } localStorage.setItem(migratedKey, "1"); } await loadCloud();
+        const migratedKey = `${MIGRATED_KEY}:${session.user.id}`; if (!localStorage.getItem(migratedKey)) { const localTasks = safeTasks(); if (localTasks.length) { const rows = localTasks.map((task) => ({ id: task.id, user_id: session.user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer", drive_link: task.driveLink || null })); const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" }); if (error) throw error; } localStorage.setItem(migratedKey, "1"); } await loadCloud();
       } catch (error) { console.error(error); setMessage("Cloud sync is not ready yet. Check your Supabase setup."); }
     };
     void init(); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user?.email ?? ""); if (session?.user) void loadCloud(); }); return () => { mounted = false; listener.subscription.unsubscribe(); };
