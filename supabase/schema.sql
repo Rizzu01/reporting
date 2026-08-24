@@ -11,7 +11,7 @@ create table if not exists public.tasks (
 );
 
 create index if not exists tasks_user_date_idx on public.tasks(user_id, work_date, created_at);
-
+grant select, insert, update, delete on public.tasks to authenticated;
 alter table public.tasks enable row level security;
 
 drop policy if exists "Users can read their own tasks" on public.tasks;
@@ -34,6 +34,7 @@ create table if not exists public.work_reports (
   unique(user_id, period_start, period_end)
 );
 
+grant select, insert, update, delete on public.work_reports to authenticated;
 alter table public.work_reports enable row level security;
 
 drop policy if exists "Users can read their own reports" on public.work_reports;
