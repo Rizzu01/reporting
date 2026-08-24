@@ -4,28 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
 
 const TASK_KEY = "worklog.tasks.v2";
-const ASSIGNED_KEY = "worklog.assignedTo.v1";
 const REPORT_KEY = "worklog.overallReport.v1";
 const MIGRATED_KEY = "worklog.cloudMigrated.v1";
-
 type LocalTask = { id: string; date: string; description: string; assignedTo: string; remark?: string };
-
 type Props = { children: React.ReactNode };
 
 function safeTasks(): LocalTask[] {
-  try {
-    const value = localStorage.getItem(TASK_KEY);
-    const parsed = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  try { const value = localStorage.getItem(TASK_KEY); const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 }
-
 function normalizedTasks(tasks: LocalTask[]) {
-  return [...tasks]
-    .map((task) => ({ id: task.id, date: task.date, description: task.description, assignedTo: task.assignedTo || "Designer", remark: task.remark }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  return [...tasks].map((task) => ({ id: task.id, date: task.date, description: task.description, assignedTo: task.assignedTo || "Designer", remark: task.remark })).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 }
 
 export default function CloudSync({ children }: Props) {
@@ -45,36 +33,19 @@ export default function CloudSync({ children }: Props) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: rows, error } = await supabase
-      .from("tasks")
-      .select("id, work_date, description, assigned_to, created_at")
-      .eq("user_id", user.id)
-      .order("work_date", { ascending: true })
-      .order("created_at", { ascending: true });
+    const { data: rows, error } = await supabase.from("tasks").select("id, work_date, description, assigned_to, created_at").eq("user_id", user.id).order("work_date", { ascending: true }).order("created_at", { ascending: true });
     if (error) throw error;
-
-    const cloudTasks: LocalTask[] = (rows ?? []).map((row) => ({
-      id: row.id,
-      date: row.work_date,
-      description: row.description,
-      assignedTo: row.assigned_to,
-    }));
+    const cloudTasks: LocalTask[] = (rows ?? []).map((row) => ({ id: row.id, date: row.work_date, description: row.description, assignedTo: row.assigned_to }));
     const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
     const localSignature = JSON.stringify(normalizedTasks(safeTasks()));
-
     if (cloudSignature !== localSignature) {
       localStorage.setItem(TASK_KEY, JSON.stringify(cloudTasks));
-      window.dispatchEvent(new CustomEvent("worklog:cloud-sync"));
       window.location.reload();
+      return;
     }
     lastUploaded.current = cloudSignature;
 
-    const { data: reportRows } = await supabase
-      .from("work_reports")
-      .select("content, updated_at")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(1);
+    const { data: reportRows } = await supabase.from("work_reports").select("content, updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(1);
     const latestReport = reportRows?.[0]?.content;
     if (typeof latestReport === "string" && latestReport !== (localStorage.getItem(REPORT_KEY) ?? "")) {
       localStorage.setItem(REPORT_KEY, latestReport);
@@ -88,18 +59,20 @@ export default function CloudSync({ children }: Props) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const localTasks = safeTasks();
       const signature = JSON.stringify(normalizedTasks(localTasks));
       if (signature !== lastUploaded.current) {
-        const rows = localTasks.map((task) => ({
-          id: task.id,
-          user_id: user.id,
-          work_date: task.date,
-          description: task.description,
-          assigned_to: task.assignedTo || "Designer",
-        }));
-        if (rows.length) {
+        const { data: cloudRows, error: cloudError } = await supabase.from("tasks").select("id").eq("user_id", user.id);
+        if (cloudError) throw cloudError;
+        const localIds = new Set(localTasks.map((task) => task.id));
+        for (const row of cloudRows ?? []) {
+          if (!localIds.has(row.id)) {
+            const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id);
+            if (error) throw error;
+          }
+        }
+        if (localTasks.length) {
+          const rows = localTasks.map((task) => ({ id: task.id, user_id: user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer" }));
           const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" });
           if (error) throw error;
         }
@@ -109,30 +82,15 @@ export default function CloudSync({ children }: Props) {
       const report = localStorage.getItem(REPORT_KEY) ?? "";
       if (report.trim() && localTasks.length) {
         const dates = localTasks.map((task) => task.date).sort();
-        const periodStart = dates[0];
-        const periodEnd = dates[dates.length - 1];
-        const { error } = await supabase.from("work_reports").upsert({
-          user_id: user.id,
-          period_start: periodStart,
-          period_end: periodEnd,
-          content: report,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id,period_start,period_end" });
+        const { error } = await supabase.from("work_reports").upsert({ user_id: user.id, period_start: dates[0], period_end: dates[dates.length - 1], content: report, updated_at: new Date().toISOString() }, { onConflict: "user_id,period_start,period_end" });
         if (error) throw error;
       }
-    } catch (error) {
-      console.error("Worklog cloud sync failed", error);
-    } finally {
-      syncing.current = false;
-    }
+    } catch (error) { console.error("Worklog cloud sync failed", error); }
+    finally { syncing.current = false; }
   }, [supabase]);
 
   useEffect(() => {
-    if (!supabase) {
-      setReady(true);
-      return;
-    }
-
+    if (!supabase) { setReady(true); return; }
     let mounted = true;
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -152,20 +110,11 @@ export default function CloudSync({ children }: Props) {
             localStorage.setItem(migratedKey, "1");
           }
           await loadCloud();
-        } catch (error) {
-          console.error(error);
-          setMessage("Cloud sync is not ready yet. Check your Supabase setup.");
-        }
+        } catch (error) { console.error(error); setMessage("Cloud sync is not ready yet. Check your Supabase setup."); }
       }
     };
     void init();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email ?? "");
-      if (session?.user) {
-        window.location.reload();
-      }
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user?.email ?? ""); if (session?.user) window.location.reload(); });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [loadCloud, supabase]);
 
@@ -181,25 +130,15 @@ export default function CloudSync({ children }: Props) {
     if (!supabase) return;
     if (!email.trim() || password.length < 6) { setMessage("Enter an email and a password of at least 6 characters."); return; }
     setBusy(true); setMessage("");
-    const result = authMode === "login"
-      ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      : await supabase.auth.signUp({ email: email.trim(), password });
+    const result = authMode === "login" ? await supabase.auth.signInWithPassword({ email: email.trim(), password }) : await supabase.auth.signUp({ email: email.trim(), password });
     setBusy(false);
     if (result.error) { setMessage(result.error.message); return; }
     if (authMode === "signup" && !result.data.session) setMessage("Account created. Check your email to confirm the account, then sign in.");
   }
-
-  async function signOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    window.location.reload();
-  }
+  async function signOut() { if (!supabase) return; await supabase.auth.signOut(); window.location.reload(); }
 
   if (!ready) return <div className="cloud-gate loading"><div className="cloud-card"><div className="cloud-logo">W</div><strong>Loading Worklog…</strong></div></div>;
-
   if (!supabase) return <div className="cloud-gate"><div className="cloud-card"><div className="cloud-logo">W</div><span className="cloud-kicker">CLOUD SYNC</span><h1>Connect your Worklog</h1><p>Add your Supabase project URL and publishable/anon key to the environment variables, then redeploy.</p><code>NEXT_PUBLIC_SUPABASE_URL</code><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code></div></div>;
-
   if (!userEmail) return <div className="cloud-gate"><form className="cloud-card auth-card" onSubmit={submitAuth}><div className="cloud-logo">W</div><span className="cloud-kicker">WORKLOG CLOUD</span><h1>{authMode === "login" ? "Welcome back" : "Create your account"}</h1><p>{authMode === "login" ? "Sign in to access your tasks from any device." : "Create one account and use the same worklog everywhere."}</p><label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete={authMode === "login" ? "current-password" : "new-password"} /></label>{message && <div className="cloud-message">{message}</div>}<button className="cloud-submit" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}</button><button type="button" className="cloud-switch" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setMessage(""); }}>{authMode === "login" ? "Create a new account" : "Already have an account? Sign in"}</button></form></div>;
-
   return <>{children}<div className="cloud-account"><span className="cloud-status" /> <span>{userEmail}</span><button onClick={signOut}>Sign out</button></div></>;
 }
