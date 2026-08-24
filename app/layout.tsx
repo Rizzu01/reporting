@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import CloudSync from "@/components/cloud-sync";
 
 export const metadata: Metadata = {
   title: "Worklog — Daily Reporting",
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><CloudSync>{children}</CloudSync></body>
     </html>
   );
 }
