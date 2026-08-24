@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     ];
 
     if (overallReport) {
-      const lines = overallReport.split(/\r?\n/).map((line) => line.trim());
+      const lines: string[] = overallReport.split(/\r?\n/).map((line: string) => line.trim());
       let inSummary = false;
       let remarkMode = false;
       const summaryLines: string[] = [];
