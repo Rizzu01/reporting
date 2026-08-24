@@ -8,7 +8,6 @@ const REPORT_KEY = "worklog.overallReport.v1";
 const MIGRATED_KEY = "worklog.cloudMigrated.v1";
 type LocalTask = { id: string; date: string; description: string; assignedTo: string; remark?: string };
 type Props = { children: React.ReactNode };
-
 function safeTasks(): LocalTask[] { try { const value = localStorage.getItem(TASK_KEY); const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
 function normalizedTasks(tasks: LocalTask[]) { return [...tasks].map((task) => ({ id: task.id, date: task.date, description: task.description, assignedTo: task.assignedTo || "Designer", remark: task.remark })).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)); }
 function authRedirectUrl() { return typeof window !== "undefined" ? window.location.origin : undefined; }
@@ -53,15 +52,14 @@ export default function CloudSync({ children }: Props) {
         const migratedKey = `${MIGRATED_KEY}:${session.user.id}`; if (!localStorage.getItem(migratedKey)) { const localTasks = safeTasks(); if (localTasks.length) { const rows = localTasks.map((task) => ({ id: task.id, user_id: session.user.id, work_date: task.date, description: task.description, assigned_to: task.assignedTo || "Designer" })); const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" }); if (error) throw error; } localStorage.setItem(migratedKey, "1"); } await loadCloud();
       } catch (error) { console.error(error); setMessage("Cloud sync is not ready yet. Check your Supabase setup."); }
     };
-    void init(); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user?.email ?? ""); if (session?.user) window.location.reload(); }); return () => { mounted = false; listener.subscription.unsubscribe(); };
+    void init(); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUserEmail(session?.user?.email ?? ""); if (session?.user) void loadCloud(); }); return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [loadCloud, supabase]);
 
   useEffect(() => { if (!supabase || !userEmail) return; const localTimer = window.setInterval(() => void uploadLocal(), 1500); const cloudTimer = window.setInterval(() => void loadCloud(), 5000); return () => { window.clearInterval(localTimer); window.clearInterval(cloudTimer); }; }, [loadCloud, supabase, uploadLocal, userEmail]);
 
   async function submitAuth(event: React.FormEvent) {
     event.preventDefault(); if (!supabase) return; if (!email.trim() || password.length < 6) { setMessage("Enter an email and a password of at least 6 characters."); return; } setBusy(true); setMessage("");
-    const options = { emailRedirectTo: authRedirectUrl() };
-    const result = authMode === "login" ? await supabase.auth.signInWithPassword({ email: email.trim(), password }) : await supabase.auth.signUp({ email: email.trim(), password, options });
+    const options = { emailRedirectTo: authRedirectUrl() }; const result = authMode === "login" ? await supabase.auth.signInWithPassword({ email: email.trim(), password }) : await supabase.auth.signUp({ email: email.trim(), password, options });
     setBusy(false); if (result.error) { setMessage(result.error.message); return; } if (authMode === "signup" && !result.data.session) setMessage("Account created. Check your email to confirm the account, then sign in.");
   }
   async function signOut() { if (!supabase) return; await supabase.auth.signOut(); window.location.reload(); }
@@ -69,5 +67,5 @@ export default function CloudSync({ children }: Props) {
   if (!ready) return <div className="cloud-gate loading"><div className="cloud-card"><div className="cloud-logo">W</div><strong>Loading Worklog…</strong></div></div>;
   if (!supabase) return <div className="cloud-gate"><div className="cloud-card"><div className="cloud-logo">W</div><span className="cloud-kicker">CLOUD SYNC</span><h1>Connect your Worklog</h1><p>Supabase configuration is missing.</p></div></div>;
   if (!userEmail) return <div className="cloud-gate"><form className="cloud-card auth-card" onSubmit={submitAuth}><div className="cloud-logo">W</div><span className="cloud-kicker">WORKLOG CLOUD</span><h1>{authMode === "login" ? "Welcome back" : "Create your account"}</h1><p>{authMode === "login" ? "Sign in to access your tasks from any device." : "Create one account and use the same worklog everywhere."}</p><label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete={authMode === "login" ? "current-password" : "new-password"} /></label>{message && <div className="cloud-message">{message}</div>}<button className="cloud-submit" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}</button><button type="button" className="cloud-switch" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setMessage(""); }}>{authMode === "login" ? "Create a new account" : "Already have an account? Sign in"}</button></form></div>;
-  return <>{children}<div className="cloud-account"><span className="cloud-status" /> <span>{userEmail}</span><button onClick={signOut}>Sign out</button></div></>;
+  return <>{children}<div className="cloud-account"><span className="cloud-status" /><span>{userEmail}</span><button onClick={signOut}>Sign out</button></div></>;
 }
