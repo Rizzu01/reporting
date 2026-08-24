@@ -2,21 +2,28 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Entry = {
+type Task = {
   id: string;
   date: string;
-  title: string;
-  details: string;
-  status: "Done" | "In progress" | "Blocked";
-  tags: string[];
+  description: string;
+  assignedTo: string;
   remark?: string;
 };
 
-const KEY = "worklog.entries.v1";
+const KEY = "worklog.tasks.v2";
+const ASSIGNED_KEY = "worklog.assignedTo.v1";
 const today = new Date().toISOString().slice(0, 10);
 
 function formatDate(date: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00`));
+}
+
+function shortDate(date: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T00:00:00`));
+}
+
+function dayName(date: string) {
+  return new Intl.DateTimeFormat("en-IN", { weekday: "long" }).format(new Date(`${date}T00:00:00`));
 }
 
 function getWeekStart(date: string) {
@@ -26,13 +33,21 @@ function getWeekStart(date: string) {
   return d.toISOString().slice(0, 10);
 }
 
+function getWeekDates(date: string) {
+  const start = new Date(`${getWeekStart(date)}T00:00:00`);
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
 export default function Home() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [date, setDate] = useState(today);
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
-  const [status, setStatus] = useState<Entry["status"]>("Done");
-  const [tags, setTags] = useState("");
+  const [description, setDescription] = useState("");
+  const [assignedTo, setAssignedTo] = useState("Designer");
+  const [reportTitle, setReportTitle] = useState("Weekly Design Task Tracker");
   const [notice, setNotice] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [summary, setSummary] = useState("");
@@ -40,77 +55,75 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      if (saved) setEntries(JSON.parse(saved));
+      const savedAssigned = localStorage.getItem(ASSIGNED_KEY);
+      if (saved) setTasks(JSON.parse(saved));
+      if (savedAssigned) setAssignedTo(savedAssigned);
     } catch {
-      setNotice("Could not read saved worklogs.");
+      setNotice("Could not read saved tasks.");
     }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify(entries));
-  }, [entries]);
+  useEffect(() => localStorage.setItem(KEY, JSON.stringify(tasks)), [tasks]);
+  useEffect(() => localStorage.setItem(ASSIGNED_KEY, assignedTo), [assignedTo]);
 
-  const selected = useMemo(() => entries.filter((e) => e.date === date), [entries, date]);
-  const weekEntries = useMemo(() => {
-    const start = getWeekStart(date);
-    const end = new Date(`${start}T00:00:00`);
-    end.setDate(end.getDate() + 6);
-    const endDate = end.toISOString().slice(0, 10);
-    return entries.filter((e) => e.date >= start && e.date <= endDate);
-  }, [entries, date]);
-  const monthEntries = useMemo(() => entries.filter((e) => e.date.startsWith(date.slice(0, 7))), [entries, date]);
+  const weekDates = useMemo(() => getWeekDates(date), [date]);
+  const weekTasks = useMemo(() => tasks.filter((t) => weekDates.includes(t.date)), [tasks, weekDates]);
+  const monthTasks = useMemo(() => tasks.filter((t) => t.date.startsWith(date.slice(0, 7))), [tasks, date]);
 
-  function addEntry() {
-    if (!title.trim() || !details.trim()) {
-      setNotice("Add a work title and details first.");
+  const groupedWeek = useMemo(() => weekDates.map((d) => ({ date: d, tasks: weekTasks.filter((t) => t.date === d) })), [weekDates, weekTasks]);
+
+  const rangeLabel = `${shortDate(weekDates[0])} – ${shortDate(weekDates[weekDates.length - 1])}`;
+
+  function addTask() {
+    if (!description.trim()) {
+      setNotice("Add a task description first.");
       return;
     }
-    const entry: Entry = {
+    const task: Task = {
       id: crypto.randomUUID(),
       date,
-      title: title.trim(),
-      details: details.trim(),
-      status,
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      description: description.trim(),
+      assignedTo: assignedTo.trim() || "Designer",
     };
-    setEntries((current) => [entry, ...current]);
-    setTitle("");
-    setDetails("");
-    setTags("");
-    setNotice("Saved locally.");
+    setTasks((current) => [...current, task]);
+    setDescription("");
+    setNotice("Task saved.");
   }
 
-  function removeEntry(id: string) {
-    setEntries((current) => current.filter((e) => e.id !== id));
+  function removeTask(id: string) {
+    setTasks((current) => current.filter((task) => task.id !== id));
   }
 
   function exportCsv(scope: "week" | "month") {
-    const data = scope === "week" ? weekEntries : monthEntries;
-    const rows = [["Date", "Work", "Details", "Status", "Tags", "AI Remark"], ...data.map((e) => [e.date, e.title, e.details, e.status, e.tags.join("; "), e.remark ?? ""])];
+    const data = scope === "week" ? weekTasks : monthTasks;
+    const rows = [["#", "Day", "Date", "Task Description", "Assigned To"], ...data.map((task, index) => [index + 1, dayName(task.date), formatDate(task.date), task.description, task.assignedTo])];
     const csv = rows.map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `worklog-${scope}-${date}.csv`;
+    a.download = `design-task-tracker-${scope}-${date}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   function printReport(scope: "week" | "month") {
-    const data = scope === "week" ? weekEntries : monthEntries;
+    const groups = scope === "week" ? groupedWeek : Array.from(new Set(monthTasks.map((t) => t.date))).sort().map((d) => ({ date: d, tasks: monthTasks.filter((t) => t.date === d) }));
+    const data = scope === "week" ? weekTasks : monthTasks;
+    const heading = scope === "week" ? `Weekly Design Task Tracker | ${rangeLabel}` : `Monthly Design Task Tracker | ${new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00`))}`;
+    const rows = groups.flatMap((group) => group.tasks.map((task, i) => `<tr><td>${i === 0 ? group.tasks.indexOf(task) + 1 : ""}</td><td>${i === 0 ? `<strong>${dayName(group.date)}</strong>` : ""}</td><td>${i === 0 ? `<em>${formatDate(group.date)}</em>` : ""}</td><td>${task.description}</td><td>${task.assignedTo}</td></tr>`)).join("");
     const win = window.open("", "_blank");
     if (!win) return;
-    win.document.write(`<html><head><title>${scope} work report</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{margin-bottom:4px}small{color:#666}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #ddd;padding:10px;text-align:left;vertical-align:top}th{background:#f5f5f5}</style></head><body><h1>${scope === "week" ? "Weekly" : "Monthly"} Work Report</h1><small>Generated ${formatDate(date)}</small><table><tr><th>Date</th><th>Work</th><th>Details</th><th>Status</th><th>Remark</th></tr>${data.map((e) => `<tr><td>${formatDate(e.date)}</td><td>${e.title}</td><td>${e.details}</td><td>${e.status}</td><td>${e.remark ?? "—"}</td></tr>`).join("")}</table></body></html>`);
+    win.document.write(`<html><head><title>${heading}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{text-align:center;font-size:20px;margin:0 0 24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:9px;text-align:left;vertical-align:top;font-size:12px}th{text-align:center;background:#f3f3f3}td:first-child{width:42px;text-align:center}td:nth-child(2){width:105px}td:nth-child(3){width:125px}</style></head><body><h1>🎨 ${heading}</h1><table><thead><tr><th>#</th><th>Day</th><th>Date</th><th>Task Description</th><th>Assigned To</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
     win.document.close();
     win.focus();
     win.print();
   }
 
   async function generateAi(type: "remarks" | "summary") {
-    const data = type === "summary" ? weekEntries : selected;
+    const data = type === "summary" ? weekTasks : tasks.filter((task) => task.date === date);
     if (!data.length) {
-      setNotice("Add at least one work entry first.");
+      setNotice("Add at least one task first.");
       return;
     }
     setAiLoading(true);
@@ -120,12 +133,9 @@ export default function Home() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "AI request failed");
       if (type === "summary") setSummary(json.text);
-      else {
-        const text = json.text as string;
-        setEntries((current) => current.map((e) => e.date === date ? { ...e, remark: text } : e));
-      }
+      else setTasks((current) => current.map((task) => task.date === date ? { ...task, remark: json.text } : task));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "AI request failed.");
+      setNotice(error instanceof Error ? error.message : "AI request failed");
     } finally {
       setAiLoading(false);
     }
@@ -134,38 +144,60 @@ export default function Home() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div><div className="eyebrow">WORKLOG</div><h1>Daily reporting, without the daily hassle.</h1><p>Capture the work. Let AI turn it into manager-ready reporting.</p></div>
-        <div className="top-actions"><button className="ghost" onClick={() => printReport("week")}>Print weekly</button><button className="primary" onClick={() => exportCsv("week")}>Export CSV</button></div>
+        <div>
+          <div className="eyebrow">WORKLOG / REPORTING</div>
+          <h1>Daily work, organized like your manager&apos;s tracker.</h1>
+          <p>Log multiple tasks against a date, then export the same clean weekly or monthly table for email.</p>
+        </div>
+        <div className="top-actions"><button className="ghost" onClick={() => printReport("week")}>Print report</button><button className="primary" onClick={() => exportCsv("week")}>Download CSV</button></div>
       </header>
 
-      <section className="stats">
-        <div><span>This week</span><strong>{weekEntries.length}</strong><small>work items</small></div>
-        <div><span>This month</span><strong>{monthEntries.length}</strong><small>work items</small></div>
-        <div><span>Selected day</span><strong>{selected.length}</strong><small>{formatDate(date)}</small></div>
+      <section className="editor card">
+        <div className="card-head"><div><span className="kicker">NEW TASK</span><h2>Add work to a specific day</h2></div><input className="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="editor-grid">
+          <label>Task description<input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Create 2 Blog Banner" onKeyDown={(e) => { if (e.key === "Enter") addTask(); }} /></label>
+          <label>Assigned to<input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Designer" /></label>
+          <button className="primary add" onClick={addTask}>+ Add task</button>
+        </div>
+        {notice && <div className="notice">{notice}</div>}
       </section>
 
-      <section className="grid">
-        <div className="card composer">
-          <div className="card-head"><div><span className="kicker">LOG WORK</span><h2>What did you do?</h2></div><input className="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-          <label>Work title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Redesigned onboarding flow" /></label>
-          <label>Details<textarea value={details} onChange={(e) => setDetails(e.target.value)} placeholder="Describe what you completed, decisions made, outcomes, or blockers..." rows={6} /></label>
-          <div className="two"><label>Status<select value={status} onChange={(e) => setStatus(e.target.value as Entry["status"])}><option>Done</option><option>In progress</option><option>Blocked</option></select></label><label>Tags<input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="UI, research, crypto" /></label></div>
-          <button className="primary full" onClick={addEntry}>Save work entry</button>
-          {notice && <div className="notice">{notice}</div>}
+      <section className="report card">
+        <div className="report-toolbar">
+          <div><span className="kicker">REPORT PREVIEW</span><h2>🎨 {reportTitle} <span>| {rangeLabel}</span></h2></div>
+          <div className="report-actions"><input className="title-input" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} aria-label="Report title" /><button className="ghost" onClick={() => generateAi("remarks")} disabled={aiLoading}>✦ {aiLoading ? "Writing…" : "AI remarks"}</button></div>
         </div>
 
-        <div className="card entries">
-          <div className="card-head"><div><span className="kicker">{formatDate(date)}</span><h2>Today&apos;s work</h2></div><button className="ai" disabled={aiLoading} onClick={() => generateAi("remarks")}>✦ {aiLoading ? "Writing…" : "AI remark"}</button></div>
-          {!selected.length ? <div className="empty"><div className="empty-icon">＋</div><h3>No work logged yet</h3><p>Pick a date and add your first activity. Your entries stay saved in this browser.</p></div> : <div className="entry-list">{selected.map((e) => <article className="entry" key={e.id}><div className="entry-top"><span className={`status ${e.status.toLowerCase().replaceAll(" ", "-")}`}>{e.status}</span><button onClick={() => removeEntry(e.id)}>Delete</button></div><h3>{e.title}</h3><p>{e.details}</p>{e.tags.length > 0 && <div className="tags">{e.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}{e.remark && <div className="remark"><b>AI remark</b><span>{e.remark}</span></div>}</article>)}</div>}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Day</th><th>Date</th><th>Task Description</th><th>Assigned To</th><th className="action-col"> </th></tr></thead>
+            <tbody>
+              {groupedWeek.flatMap((group, dayIndex) => group.tasks.length ? group.tasks.map((task, taskIndex) => <tr key={task.id}>
+                <td>{taskIndex === 0 ? weekTasks.findIndex((t) => t.id === task) + 1 : ""}</td>
+                <td>{taskIndex === 0 ? <strong>{dayName(group.date)}</strong> : ""}</td>
+                <td>{taskIndex === 0 ? <em>{formatDate(group.date)}</em> : ""}</td>
+                <td>{task.description}{task.remark && <div className="ai-remark">AI: {task.remark}</div>}</td>
+                <td>{task.assignedTo}</td>
+                <td className="action-col"><button onClick={() => removeTask(task.id)}>×</button></td>
+              </tr>) : null)}
+              {!weekTasks.length && <tr><td colSpan={6} className="empty-row">No tasks for this week. Add your first task above.</td></tr>}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <section className="card reports">
-        <div className="card-head"><div><span className="kicker">REPORTS</span><h2>Manager-ready reporting</h2><p>Export the selected week or month when it&apos;s time to send your update.</p></div><div className="report-actions"><button className="ghost" onClick={() => printReport("month")}>Print month</button><button className="ghost" onClick={() => exportCsv("month")}>Month CSV</button></div></div>
-        <div className="summary-box"><div><span className="kicker">AI WEEKLY SUMMARY</span><p>{summary || "Generate a concise, professional summary from this week’s saved work."}</p></div><button className="primary" disabled={aiLoading} onClick={() => generateAi("summary")}>✦ Generate summary</button></div>
+      <section className="bottom-grid">
+        <div className="card summary-card">
+          <div><span className="kicker">AI WEEKLY SUMMARY</span><h2>Manager-ready summary</h2><p>{summary || "Generate a concise summary of the work completed across the selected week."}</p></div>
+          <button className="primary" onClick={() => generateAi("summary")} disabled={aiLoading}>✦ Generate summary</button>
+        </div>
+        <div className="card export-card">
+          <span className="kicker">EXPORT</span><h2>Ready to mail</h2><p>Download the tracker as CSV or print it and choose Save as PDF.</p>
+          <div className="export-buttons"><button className="ghost" onClick={() => exportCsv("week")}>Weekly CSV</button><button className="ghost" onClick={() => exportCsv("month")}>Monthly CSV</button><button className="ghost" onClick={() => printReport("month")}>Monthly PDF</button></div>
+        </div>
       </section>
 
-      <footer>Worklog MVP · local-first storage · AI is optional and only runs when you ask it to.</footer>
+      <footer>Worklog MVP · table-first reporting · saved in this browser</footer>
     </main>
   );
 }
