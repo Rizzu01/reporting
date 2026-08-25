@@ -28,3 +28,5 @@ Copy `.env.example` to `.env.local` and add an OpenAI API key. AI calls are serv
 ## Next production step
 
 The MVP intentionally uses localStorage so the workflow can be tested immediately. For multi-device reliability, replace the storage layer with PostgreSQL + Prisma (or Supabase) and add authentication. Keep the UI contract the same: entries are keyed by date, reports query a date range, and AI receives only the selected entries.
+
+<!-- Trigger a fresh deployment from the current main branch. -->
