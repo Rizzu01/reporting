@@ -1,0 +1,24 @@
+.task-card {
+  animation: taskCardIn 280ms ease-out both;
+}
+
+@keyframes taskCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.form-stack .dark-btn:active {
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card {
+    animation: none;
+  }
+}
