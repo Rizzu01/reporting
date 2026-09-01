@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./cloud-sync.css";
 import "./task-animation.css";
+import "./week-navigation-fix.css";
 import CloudSync from "@/components/cloud-sync";
 
 export const metadata: Metadata = {
