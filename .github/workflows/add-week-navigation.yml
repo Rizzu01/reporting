@@ -1,0 +1,42 @@
+name: Add week navigation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/add-week-navigation.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch weekly navigation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/page.tsx')
+          s=p.read_text()
+          s=s.replace('return Array.from({ length: 6 }, (_, i) =>', 'return Array.from({ length: 7 }, (_, i) =>')
+          s=s.replace('const today = dateKey(new Date());', '''const today = dateKey(new Date());
+function shiftWeek(date: string, amount: number) { const d = parseDate(date); d.setDate(d.getDate() + amount * 7); return dateKey(d); }''')
+          s=s.replace('const [deleteTask,setDeleteTask]=useState<Task|null>(null);', 'const [deleteTask,setDeleteTask]=useState<Task|null>(null); const [weekAnchor,setWeekAnchor]=useState(today);')
+          s=s.replace('const weekDates=useMemo(()=>getWeekDates(date),[date]);', 'const weekDates=useMemo(()=>getWeekDates(weekAnchor),[weekAnchor]);')
+          old='const reportStartDate=weekTasks.length?[...weekTasks].sort((a,b)=>a.date.localeCompare(b.date))[0].date:date; const reportEndDate=weekTasks.length?[...weekTasks].sort((a,b)=>b.date.localeCompare(a.date))[0].date:date; const rangeLabel=`${shortDate(reportStartDate)} – ${shortDate(reportEndDate)}`;'
+          new='const reportStartDate=weekDates[0]; const reportEndDate=weekDates[weekDates.length-1]; const rangeLabel=`${shortDate(reportStartDate)} – ${shortDate(reportEndDate)}`;'
+          s=s.replace(old,new)
+          old='''<div id="weekly" className="panel tracker-panel"><div className="panel-title"><div><span className="kicker">THIS PERIOD</span><h2>Weekly task tracker</h2></div><span className="period-pill">{rangeLabel}</span></div>'''
+          new='''<div id="weekly" className="panel tracker-panel"><div className="panel-title"><div><span className="kicker">THIS PERIOD</span><h2>Weekly task tracker</h2></div></div><div className="week-navigation"><button className="week-nav-btn" onClick={()=>setWeekAnchor(current=>shiftWeek(current,-1))} aria-label="Previous week">‹</button><div className="week-range"><span>{rangeLabel}</span><button onClick={()=>setWeekAnchor(today)}>Today</button></div><button className="week-nav-btn" onClick={()=>setWeekAnchor(current=>shiftWeek(current,1))} aria-label="Next week">›</button></div>'''
+          s=s.replace(old,new)
+          if '.week-navigation{' not in s:
+              s=s.replace('.tracker-scroll-fix{max-height:555px;', '.week-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-5px 0 14px}.week-nav-btn{width:32px;height:32px;border:1px solid #e5e6eb;background:#fff;color:#6c7080;border-radius:9px;font-size:20px;line-height:1;cursor:pointer}.week-nav-btn:hover{background:#f5f3ff;color:#7355f5;border-color:#ddd5ff}.week-range{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0}.week-range span{font-size:10px;font-weight:800;color:#666b78;white-space:nowrap}.week-range button{border:0;background:#f5f3ff;color:#7355f5;border-radius:999px;padding:6px 9px;font-size:9px;font-weight:800;cursor:pointer}.tracker-scroll-fix{max-height:555px;')
+              s=s.replace('@media(max-width:560px){.task-edit-grid', '@media(max-width:560px){.week-navigation{gap:6px}.week-range{gap:5px}.week-range span{font-size:9px}.week-range button{padding:5px 7px}.task-edit-grid')
+          p.write_text(s)
+          PY
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git diff --cached --quiet || git commit -m "feat: add weekly navigation"
+          git push
