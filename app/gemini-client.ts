@@ -9,11 +9,14 @@ export async function generateReportWithGemini(input: {
   rangeLabel: string;
   scope: "week" | "month";
 }) {
-  const response = await fetch("/api/report/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const response = await fetch(
+    "https://xaaerrvvcfrwtggzwmjh.supabase.co/functions/v1/generate-report",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
