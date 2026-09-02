@@ -19,6 +19,7 @@ export async function generateReportWithGemini(input: {
   );
 
   const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
     throw new Error(data?.error || "Could not generate the report.");
   }
