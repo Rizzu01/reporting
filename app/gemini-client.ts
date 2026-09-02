@@ -1,5 +1,3 @@
-const FUNCTION_URL = "https://xaaerrvvcfrwtggzwmjh.supabase.co/functions/v1/generate-report";
-
 type ReportInput = {
   tasks: Array<{
     id: string;
@@ -17,15 +15,14 @@ export async function generateReportWithGemini(input: ReportInput) {
   const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
   try {
-    const response = await fetch(FUNCTION_URL, {
+    const response = await fetch("/api/generate-report", {
       method: "POST",
-      mode: "cors",
-      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify(input),
+      cache: "no-store",
       signal: controller.signal,
     });
 
@@ -35,15 +32,11 @@ export async function generateReportWithGemini(input: ReportInput) {
     try {
       data = raw ? JSON.parse(raw) : {};
     } catch {
-      throw new Error(
-        `The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`
-      );
+      throw new Error(`The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`);
     }
 
     if (!response.ok) {
-      throw new Error(
-        data.error || `Report generation failed (HTTP ${response.status}).`
-      );
+      throw new Error(data.error || `Report generation failed (HTTP ${response.status}).`);
     }
 
     if (!data.report || !data.report.trim()) {
@@ -55,13 +48,9 @@ export async function generateReportWithGemini(input: ReportInput) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Report generation timed out. Please try again.");
     }
-
     if (error instanceof TypeError) {
-      throw new Error(
-        "Could not reach the report service. Please check your internet connection and try again."
-      );
+      throw new Error("Could not reach the report service. Please try again.");
     }
-
     throw error;
   } finally {
     window.clearTimeout(timeout);
