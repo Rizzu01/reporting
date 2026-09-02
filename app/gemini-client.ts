@@ -1,4 +1,6 @@
-export async function generateReportWithGemini(input: {
+const FUNCTION_URL = "https://xaaerrvvcfrwtggzwmjh.supabase.co/functions/v1/generate-report";
+
+type ReportInput = {
   tasks: Array<{
     id: string;
     date: string;
@@ -8,25 +10,60 @@ export async function generateReportWithGemini(input: {
   }>;
   rangeLabel: string;
   scope: "week" | "month";
-}) {
-  const response = await fetch(
-    "https://xaaerrvvcfrwtggzwmjh.supabase.co/functions/v1/generate-report",
-    {
+};
+
+export async function generateReportWithGemini(input: ReportInput) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const response = await fetch(FUNCTION_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+
+    const raw = await response.text();
+    let data: { report?: string; error?: string } = {};
+
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error(
+        `The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`
+      );
     }
-  );
 
-  const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        data.error || `Report generation failed (HTTP ${response.status}).`
+      );
+    }
 
-  if (!response.ok) {
-    throw new Error(data?.error || "Could not generate the report.");
+    if (!data.report || !data.report.trim()) {
+      throw new Error("Gemini returned an empty report.");
+    }
+
+    return data.report.trim();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Report generation timed out. Please try again.");
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Could not reach the report service. Please check your internet connection and try again."
+      );
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-
-  if (!data?.report) {
-    throw new Error("Gemini returned an empty report.");
-  }
-
-  return data.report as string;
 }
