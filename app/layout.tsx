@@ -3,7 +3,9 @@ import "./globals.css";
 import "./cloud-sync.css";
 import "./task-animation.css";
 import "./week-navigation-fix.css";
+import "./reference-ui.css";
 import CloudSync from "@/components/cloud-sync";
+import AutoCorrect from "@/components/autocorrect";
 
 export const metadata: Metadata = {
   title: "Worklog — Daily Reporting",
@@ -13,7 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body><CloudSync>{children}</CloudSync></body>
+      <body><AutoCorrect /><CloudSync>{children}</CloudSync></body>
     </html>
   );
 }
