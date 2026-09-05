@@ -93,31 +93,42 @@ export default function CloudSync({ children }: Props) {
     }));
 
     const localTasks = safeTasks();
-    const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
-    const localSignature = JSON.stringify(normalizedTasks(localTasks));
 
-    // IMPORTANT: only hydrate from the cloud on the first load when this browser
-    // has no local tasks. Routine polling must never overwrite a task that the
-    // user has just added locally.
+    // Always merge the first cloud load with the local cache. The previous
+    // implementation only restored cloud tasks when localStorage was empty,
+    // which meant having even one newly-created local task could hide all of
+    // the user's older weeks. Cloud provides the history; local wins only for
+    // matching IDs that have unsynced edits.
     if (!hydrated.current) {
       hydrated.current = true;
 
-      if (!localTasks.length && cloudTasks.length) {
-        localStorage.setItem(TASK_KEY, JSON.stringify(cloudTasks));
-        lastUploaded.current = cloudSignature;
+      const merged = new Map<string, LocalTask>();
+      for (const task of cloudTasks) merged.set(task.id, task);
+      for (const task of localTasks) merged.set(task.id, task);
+
+      const mergedTasks = Array.from(merged.values()).sort(
+        (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+      );
+      const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
+      const localSignature = JSON.stringify(normalizedTasks(localTasks));
+      const mergedSignature = JSON.stringify(normalizedTasks(mergedTasks));
+
+      if (mergedSignature !== localSignature) {
+        localStorage.setItem(TASK_KEY, JSON.stringify(mergedTasks));
+        lastUploaded.current = mergedSignature;
         window.location.reload();
         return;
       }
 
-      // If local and cloud already match, there is nothing to upload.
-      // If they differ, keep local as the source of truth and let uploadLocal
-      // safely sync it to Supabase instead of reloading and losing the new task.
-      lastUploaded.current = cloudSignature === localSignature ? localSignature : cloudSignature;
+      lastUploaded.current = cloudSignature === localSignature ? localSignature : localSignature;
+      return;
     }
 
-    // On later polls we only acknowledge a successful match. We deliberately do
-    // not call window.location.reload() here: a poll can otherwise land between
-    // React's setState and localStorage persistence and erase a newly added task.
+    const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
+    const localSignature = JSON.stringify(normalizedTasks(localTasks));
+
+    // Routine polling must never overwrite a task that the user has just added
+    // locally. It only acknowledges a successful match.
     if (cloudSignature === localSignature) {
       lastUploaded.current = localSignature;
     }
@@ -176,9 +187,6 @@ export default function CloudSync({ children }: Props) {
           if (error) throw error;
         }
 
-        // Read localStorage again after the network work. If another task was
-        // added while this upload was running, do not mark that newer version as
-        // synced; the next interval will immediately upload it.
         const latestSignature = JSON.stringify(normalizedTasks(safeTasks()));
         if (latestSignature === signature) {
           lastUploaded.current = signature;
@@ -361,36 +369,15 @@ export default function CloudSync({ children }: Props) {
           </p>
           <label>
             Email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
           </label>
           <label>
             Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete={authMode === "login" ? "current-password" : "new-password"}
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete={authMode === "login" ? "current-password" : "new-password"} />
           </label>
           {message && <div className="cloud-message">{message}</div>}
-          <button className="cloud-submit" disabled={busy}>
-            {busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}
-          </button>
-          <button
-            type="button"
-            className="cloud-switch"
-            onClick={() => {
-              setAuthMode(authMode === "login" ? "signup" : "login");
-              setMessage("");
-            }}
-          >
+          <button className="cloud-submit" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}</button>
+          <button type="button" className="cloud-switch" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setMessage(""); }}>
             {authMode === "login" ? "Create a new account" : "Already have an account? Sign in"}
           </button>
         </form>
