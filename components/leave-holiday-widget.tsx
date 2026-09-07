@@ -3,7 +3,24 @@
 import { useEffect, useState } from "react";
 
 type Mark = { id: string; date: string; type: "Leave" | "Holiday"; remark: string };
+type TrackerEntry = { id: string; date: string; description: string; assignedTo: string; driveLink?: string; remark?: string };
 const KEY = "worklog.leaveHoliday.v1";
+const TASK_KEY = "worklog.tasks.v2";
+
+function syncMarkToTracker(mark: Mark) {
+  try {
+    const current = JSON.parse(localStorage.getItem(TASK_KEY) || "[]") as TrackerEntry[];
+    const filtered = current.filter((item) => !(item.assignedTo === "System" && (item.description === "Leave" || item.description === "Holiday") && item.date === mark.date));
+    const trackerEntry: TrackerEntry = {
+      id: `leave-holiday-${mark.date}`,
+      date: mark.date,
+      description: mark.type,
+      assignedTo: "System",
+      remark: mark.remark,
+    };
+    localStorage.setItem(TASK_KEY, JSON.stringify([...filtered, trackerEntry]));
+  } catch {}
+}
 
 export default function LeaveHolidayWidget({ initialDate, onSaved }: { initialDate?: string; onSaved?: (mark: Mark) => void }) {
   const [open, setOpen] = useState(false);
@@ -13,7 +30,11 @@ export default function LeaveHolidayWidget({ initialDate, onSaved }: { initialDa
   const [marks, setMarks] = useState<Mark[]>([]);
 
   useEffect(() => {
-    try { setMarks(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch { setMarks([]); }
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) || "[]") as Mark[];
+      setMarks(saved);
+      saved.forEach(syncMarkToTracker);
+    } catch { setMarks([]); }
   }, []);
 
   function openModal() {
@@ -30,9 +51,11 @@ export default function LeaveHolidayWidget({ initialDate, onSaved }: { initialDa
     const next: Mark = { id: crypto.randomUUID(), date, type, remark: remark.trim() };
     const updated = [...marks.filter((item) => item.date !== date), next];
     localStorage.setItem(KEY, JSON.stringify(updated));
+    syncMarkToTracker(next);
     setMarks(updated);
     onSaved?.(next);
     setOpen(false);
+    window.location.reload();
   }
 
   return (
