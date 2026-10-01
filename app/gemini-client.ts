@@ -13,47 +13,46 @@ type ReportInput = {
 };
 
 export async function generateReportWithOpenRouter(input: ReportInput) {
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
   try {
-    const supabase = getSupabaseClient();
-    const { data: { session } } = supabase
-      ? await supabase.auth.getSession()
-      : { data: { session: null } };
+    const { data: { session } } = await supabase.auth.getSession();
 
-    const response = await fetch("/api/generate-report", {
-      method: "POST",
+    if (!session?.access_token) {
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+
+    const { data, error } = await supabase.functions.invoke("generate-report", {
+      body: input,
       headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {}),
+        Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(input),
-      cache: "no-store",
-      signal: controller.signal,
     });
 
-    const raw = await response.text();
-    let data: { report?: string; error?: string } = {};
+    if (error) {
+      const context = error.context;
+      let message = error.message || "Report generation failed.";
 
-    try {
-      data = raw ? JSON.parse(raw) : {};
-    } catch {
-      throw new Error(
-        `The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`,
-      );
+      if (context instanceof Response) {
+        try {
+          const payload = await context.clone().json();
+          message = payload?.error || message;
+        } catch {
+          // Keep the original Supabase function error.
+        }
+      }
+
+      throw new Error(message);
     }
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || `Report generation failed (HTTP ${response.status}).`,
-      );
-    }
-
-    if (!data.report || !data.report.trim()) {
+    if (!data?.report || !data.report.trim()) {
       throw new Error("OpenRouter returned an empty report.");
     }
 
@@ -62,9 +61,7 @@ export async function generateReportWithOpenRouter(input: ReportInput) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Report generation timed out. Please try again.");
     }
-    if (error instanceof TypeError) {
-      throw new Error("Could not reach the report service. Please try again.");
-    }
+
     throw error;
   } finally {
     window.clearTimeout(timeout);
