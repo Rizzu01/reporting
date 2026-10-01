@@ -10,7 +10,7 @@ type ReportInput = {
   scope: "week" | "month";
 };
 
-export async function generateReportWithGemini(input: ReportInput) {
+export async function generateReportWithOpenRouter(input: ReportInput) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
@@ -40,7 +40,7 @@ export async function generateReportWithGemini(input: ReportInput) {
     }
 
     if (!data.report || !data.report.trim()) {
-      throw new Error("Gemini returned an empty report.");
+      throw new Error("OpenRouter returned an empty report.");
     }
 
     return data.report.trim();
