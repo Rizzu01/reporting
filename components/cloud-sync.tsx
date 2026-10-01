@@ -111,13 +111,20 @@ export default function CloudSync({ children }: Props) {
         return;
       }
 
-      lastUploaded.current = cloudSignature === localSignature ? localSignature : localSignature;
+      // If local has entries that are not in the cloud, keep the local copy
+      // and let uploadLocal() push the missing rows. Do not mark it as synced yet.
+      lastUploaded.current = cloudSignature === localSignature ? localSignature : "";
       return;
     }
 
     const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
     const localSignature = JSON.stringify(normalizedTasks(localTasks));
-    if (cloudSignature === localSignature) lastUploaded.current = localSignature;
+    if (cloudSignature === localSignature) {
+      lastUploaded.current = localSignature;
+    } else {
+      // Cloud and local differ: uploadLocal() must reconcile the cloud.
+      lastUploaded.current = "";
+    }
   }, [supabase]);
 
   const uploadLocal = useCallback(async () => {
