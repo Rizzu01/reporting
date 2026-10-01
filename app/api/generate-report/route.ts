@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
     const upstream = await fetch(FUNCTION_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {\n        "Content-Type": "application/json",\n        Accept: "application/json",\n        ...(request.headers.get("authorization")\n          ? { Authorization: request.headers.get("authorization")! }\n          : {}),\n      },
       body: JSON.stringify(body),
       cache: "no-store",
     });
