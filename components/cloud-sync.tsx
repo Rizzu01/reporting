@@ -64,13 +64,8 @@ export default function CloudSync({ children }: Props) {
 
   const loadCloud = useCallback(async () => {
     if (!supabase) return;
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
     if (activeUserId.current !== user.id) {
       activeUserId.current = user.id;
       hydrated.current = false;
@@ -96,14 +91,8 @@ export default function CloudSync({ children }: Props) {
 
     const localTasks = safeTasks();
 
-    // Always merge the first cloud load with the local cache. The previous
-    // implementation only restored cloud tasks when localStorage was empty,
-    // which meant having even one newly-created local task could hide all of
-    // the user's older weeks. Cloud provides the history; local wins only for
-    // matching IDs that have unsynced edits.
     if (!hydrated.current) {
       hydrated.current = true;
-
       const merged = new Map<string, LocalTask>();
       for (const task of cloudTasks) merged.set(task.id, task);
       for (const task of localTasks) merged.set(task.id, task);
@@ -128,24 +117,14 @@ export default function CloudSync({ children }: Props) {
 
     const cloudSignature = JSON.stringify(normalizedTasks(cloudTasks));
     const localSignature = JSON.stringify(normalizedTasks(localTasks));
-
-    // Routine polling must never overwrite a task that the user has just added
-    // locally. It only acknowledges a successful match.
-    if (cloudSignature === localSignature) {
-      lastUploaded.current = localSignature;
-    }
+    if (cloudSignature === localSignature) lastUploaded.current = localSignature;
   }, [supabase]);
 
   const uploadLocal = useCallback(async () => {
     if (!supabase || syncing.current) return;
-
     syncing.current = true;
-
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const localTasks = safeTasks();
@@ -156,18 +135,12 @@ export default function CloudSync({ children }: Props) {
           .from("tasks")
           .select("id")
           .eq("user_id", user.id);
-
         if (cloudError) throw cloudError;
 
         const localIds = new Set(localTasks.map((task) => task.id));
-
         for (const row of cloudRows ?? []) {
           if (!localIds.has(row.id)) {
-            const { error } = await supabase
-              .from("tasks")
-              .delete()
-              .eq("user_id", user.id)
-              .eq("id", row.id);
+            const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id);
             if (error) throw error;
           }
         }
@@ -181,18 +154,12 @@ export default function CloudSync({ children }: Props) {
             assigned_to: task.assignedTo || "Designer",
             drive_link: task.driveLink || null,
           }));
-
-          const { error } = await supabase
-            .from("tasks")
-            .upsert(rows, { onConflict: "id" });
-
+          const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" });
           if (error) throw error;
         }
 
         const latestSignature = JSON.stringify(normalizedTasks(safeTasks()));
-        if (latestSignature === signature) {
-          lastUploaded.current = signature;
-        }
+        if (latestSignature === signature) lastUploaded.current = signature;
       }
 
       const report = localStorage.getItem(REPORT_KEY) ?? "";
@@ -208,7 +175,6 @@ export default function CloudSync({ children }: Props) {
           },
           { onConflict: "user_id,period_start,period_end" },
         );
-
         if (error) throw error;
       }
     } catch (error) {
@@ -223,14 +189,10 @@ export default function CloudSync({ children }: Props) {
       setReady(true);
       return;
     }
-
     let mounted = true;
 
     const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
 
       setUserEmail(session?.user?.email ?? "");
@@ -240,10 +202,8 @@ export default function CloudSync({ children }: Props) {
       if (session?.user) {
         try {
           const migratedKey = `${MIGRATED_KEY}:${session.user.id}`;
-
           if (!localStorage.getItem(migratedKey)) {
             const localTasks = safeTasks();
-
             if (localTasks.length) {
               const rows = localTasks.map((task) => ({
                 id: task.id,
@@ -253,17 +213,11 @@ export default function CloudSync({ children }: Props) {
                 assigned_to: task.assignedTo || "Designer",
                 drive_link: task.driveLink || null,
               }));
-
-              const { error } = await supabase
-                .from("tasks")
-                .upsert(rows, { onConflict: "id" });
-
+              const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" });
               if (error) throw error;
             }
-
             localStorage.setItem(migratedKey, "1");
           }
-
           await loadCloud();
         } catch (error) {
           console.error(error);
@@ -288,10 +242,8 @@ export default function CloudSync({ children }: Props) {
 
   useEffect(() => {
     if (!supabase || !userEmail) return;
-
     const localTimer = window.setInterval(() => void uploadLocal(), 1200);
     const cloudTimer = window.setInterval(() => void loadCloud(), 8000);
-
     return () => {
       window.clearInterval(localTimer);
       window.clearInterval(cloudTimer);
@@ -300,14 +252,12 @@ export default function CloudSync({ children }: Props) {
 
   async function submitAuth(event: React.FormEvent) {
     event.preventDefault();
-
     if (!supabase) return;
 
     if (!email.trim() || password.length < 6) {
       setMessage("Enter an email and a password of at least 6 characters.");
       return;
     }
-
     if (authMode === "signup" && !fullName.trim()) {
       setMessage("Please enter your full name.");
       return;
@@ -315,7 +265,6 @@ export default function CloudSync({ children }: Props) {
 
     setBusy(true);
     setMessage("");
-
     const options = { emailRedirectTo: authRedirectUrl(), data: { full_name: fullName.trim() } };
     const result =
       authMode === "login"
@@ -323,12 +272,10 @@ export default function CloudSync({ children }: Props) {
         : await supabase.auth.signUp({ email: email.trim(), password, options });
 
     setBusy(false);
-
     if (result.error) {
       setMessage(result.error.message);
       return;
     }
-
     if (authMode === "signup" && !result.data.session) {
       setMessage("Account created. Check your email to confirm the account, then sign in.");
     }
@@ -376,10 +323,18 @@ export default function CloudSync({ children }: Props) {
               ? "Sign in to access your tasks from any device."
               : "Create one account and use the same worklog everywhere."}
           </p>
-          {authMode === "signup" && <label>
-            Full name
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Rizwan Khan" autoComplete="name" />
-          </label>}
+          {authMode === "signup" && (
+            <label>
+              Full name
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Full Name"
+                autoComplete="name"
+              />
+            </label>
+          )}
           <label>
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
