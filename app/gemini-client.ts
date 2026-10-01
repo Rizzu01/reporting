@@ -23,33 +23,32 @@ export async function generateReportWithOpenRouter(input: ReportInput) {
   const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     if (!session?.access_token) {
       throw new Error("Your session has expired. Please sign in again.");
     }
 
-    const { data, error } = await supabase.functions.invoke("generate-report", {
-      body: input,
+    const response = await fetch("/api/generate-report", {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify(input),
+      signal: controller.signal,
     });
 
-    if (error) {
-      const context = error.context;
-      let message = error.message || "Report generation failed.";
+    const data = await response.json().catch(() => ({}));
 
-      if (context instanceof Response) {
-        try {
-          const payload = await context.clone().json();
-          message = payload?.error || message;
-        } catch {
-          // Keep the original Supabase function error.
-        }
-      }
-
-      throw new Error(message);
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          `Report generation failed (HTTP ${response.status}).`,
+      );
     }
 
     if (!data?.report || !data.report.trim()) {
