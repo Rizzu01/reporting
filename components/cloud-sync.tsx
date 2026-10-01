@@ -49,6 +49,8 @@ export default function CloudSync({ children }: Props) {
   const supabase = getSupabaseClient();
   const [ready, setReady] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -232,6 +234,7 @@ export default function CloudSync({ children }: Props) {
       if (!mounted) return;
 
       setUserEmail(session?.user?.email ?? "");
+      setUserName((session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.name ?? "").trim());
       setReady(true);
 
       if (session?.user) {
@@ -273,6 +276,7 @@ export default function CloudSync({ children }: Props) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email ?? "");
+      setUserName((session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.name ?? "").trim());
       if (session?.user) void loadCloud();
     });
 
@@ -304,10 +308,15 @@ export default function CloudSync({ children }: Props) {
       return;
     }
 
+    if (authMode === "signup" && !fullName.trim()) {
+      setMessage("Please enter your full name.");
+      return;
+    }
+
     setBusy(true);
     setMessage("");
 
-    const options = { emailRedirectTo: authRedirectUrl() };
+    const options = { emailRedirectTo: authRedirectUrl(), data: { full_name: fullName.trim() } };
     const result =
       authMode === "login"
         ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
@@ -367,6 +376,10 @@ export default function CloudSync({ children }: Props) {
               ? "Sign in to access your tasks from any device."
               : "Create one account and use the same worklog everywhere."}
           </p>
+          {authMode === "signup" && <label>
+            Full name
+            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Rizwan Khan" autoComplete="name" />
+          </label>}
           <label>
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
@@ -390,7 +403,7 @@ export default function CloudSync({ children }: Props) {
       {children}
       <div className="cloud-account">
         <span className="cloud-status" />
-        <span>{userEmail}</span>
+        <span>{userName || userEmail}</span>
         <button onClick={signOut}>Sign out</button>
       </div>
     </>
