@@ -137,37 +137,39 @@ export default function CloudSync({ children }: Props) {
       const localTasks = safeTasks();
       const signature = JSON.stringify(normalizedTasks(localTasks));
 
-      if (signature !== lastUploaded.current) {
-        const { data: cloudRows, error: cloudError } = await supabase
-          .from("tasks")
-          .select("id")
-          .eq("user_id", user.id);
-        if (cloudError) throw cloudError;
+      // Local Worklog is the source of truth for the current signed-in user.
+      // Always reconcile missing local rows to Supabase instead of relying only
+      // on a cached signature. This fixes cases where localStorage has newer
+      // work than the cloud.
+      const { data: cloudRows, error: cloudError } = await supabase
+        .from("tasks")
+        .select("id")
+        .eq("user_id", user.id);
+      if (cloudError) throw cloudError;
 
-        const localIds = new Set(localTasks.map((task) => task.id));
-        for (const row of cloudRows ?? []) {
-          if (!localIds.has(row.id)) {
-            const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id);
-            if (error) throw error;
-          }
-        }
-
-        if (localTasks.length) {
-          const rows = localTasks.map((task) => ({
-            id: task.id,
-            user_id: user.id,
-            work_date: task.date,
-            description: task.description,
-            assigned_to: task.assignedTo || "Designer",
-            drive_link: task.driveLink || null,
-          }));
-          const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" });
+      const localIds = new Set(localTasks.map((task) => task.id));
+      for (const row of cloudRows ?? []) {
+        if (!localIds.has(row.id)) {
+          const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id);
           if (error) throw error;
         }
-
-        const latestSignature = JSON.stringify(normalizedTasks(safeTasks()));
-        if (latestSignature === signature) lastUploaded.current = signature;
       }
+
+      if (localTasks.length) {
+        const rows = localTasks.map((task) => ({
+          id: task.id,
+          user_id: user.id,
+          work_date: task.date,
+          description: task.description,
+          assigned_to: task.assignedTo || "Designer",
+          drive_link: task.driveLink || null,
+        }));
+        const { error } = await supabase.from("tasks").upsert(rows, { onConflict: "id" });
+        if (error) throw error;
+      }
+
+      const latestSignature = JSON.stringify(normalizedTasks(safeTasks()));
+      lastUploaded.current = latestSignature === signature ? signature : "";
 
       const report = localStorage.getItem(REPORT_KEY) ?? "";
       if (report.trim() && localTasks.length) {
