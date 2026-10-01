@@ -1,3 +1,5 @@
+import { getSupabaseClient } from "@/lib/supabase";
+
 type ReportInput = {
   tasks: Array<{
     id: string;
@@ -15,11 +17,19 @@ export async function generateReportWithOpenRouter(input: ReportInput) {
   const timeout = window.setTimeout(() => controller.abort(), 90_000);
 
   try {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = supabase
+      ? await supabase.auth.getSession()
+      : { data: { session: null } };
+
     const response = await fetch("/api/generate-report", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...(session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {}),
       },
       body: JSON.stringify(input),
       cache: "no-store",
@@ -32,11 +42,15 @@ export async function generateReportWithOpenRouter(input: ReportInput) {
     try {
       data = raw ? JSON.parse(raw) : {};
     } catch {
-      throw new Error(`The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`);
+      throw new Error(
+        `The report service returned an unexpected response (HTTP ${response.status}). ${raw.slice(0, 180)}`,
+      );
     }
 
     if (!response.ok) {
-      throw new Error(data.error || `Report generation failed (HTTP ${response.status}).`);
+      throw new Error(
+        data.error || `Report generation failed (HTTP ${response.status}).`,
+      );
     }
 
     if (!data.report || !data.report.trim()) {
