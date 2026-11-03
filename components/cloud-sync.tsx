@@ -18,6 +18,17 @@ type LocalTask = {
 
 type Props = { children: React.ReactNode };
 
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function syncableTasks(tasks: LocalTask[]) {
+  // Keep legacy/special local entries (e.g. holiday markers) in the UI,
+  // but only send UUID-backed task rows to the Supabase tasks table.
+  return tasks.filter((task) => isUuid(task.id) && /^\d{4}-\d{2}-\d{2}$/.test(task.date));
+}
+
 function safeTasks(): LocalTask[] {
   try {
     const value = localStorage.getItem(TASK_KEY);
@@ -137,26 +148,13 @@ export default function CloudSync({ children }: Props) {
       const localTasks = safeTasks();
       const signature = JSON.stringify(normalizedTasks(localTasks));
 
-      // Local Worklog is the source of truth for the current signed-in user.
-      // Always reconcile missing local rows to Supabase instead of relying only
-      // on a cached signature. This fixes cases where localStorage has newer
-      // work than the cloud.
-      const { data: cloudRows, error: cloudError } = await supabase
-        .from("tasks")
-        .select("id")
-        .eq("user_id", user.id);
-      if (cloudError) throw cloudError;
+      // Safety: never delete cloud rows merely because they are absent locally.
+      // Local storage can be incomplete (another browser/device, cleared cache,
+      // or an interrupted sync). Sync only valid UUID task rows via upsert.
+      const tasksToSync = syncableTasks(localTasks);
 
-      const localIds = new Set(localTasks.map((task) => task.id));
-      for (const row of cloudRows ?? []) {
-        if (!localIds.has(row.id)) {
-          const { error } = await supabase.from("tasks").delete().eq("user_id", user.id).eq("id", row.id);
-          if (error) throw error;
-        }
-      }
-
-      if (localTasks.length) {
-        const rows = localTasks.map((task) => ({
+      if (tasksToSync.length) {
+        const rows = tasksToSync.map((task) => ({
           id: task.id,
           user_id: user.id,
           work_date: task.date,
@@ -212,7 +210,7 @@ export default function CloudSync({ children }: Props) {
         try {
           const migratedKey = `${MIGRATED_KEY}:${session.user.id}`;
           if (!localStorage.getItem(migratedKey)) {
-            const localTasks = safeTasks();
+            const localTasks = syncableTasks(safeTasks());
             if (localTasks.length) {
               const rows = localTasks.map((task) => ({
                 id: task.id,
